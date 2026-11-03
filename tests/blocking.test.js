@@ -2,7 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  addDomainsToBlocklist,
   applyBlockingRules,
+  BLOCK_PRESETS,
   buildBlockingRules,
   normalizeDomain,
   updateBlockingConfiguration,
@@ -45,7 +47,7 @@ test("buildBlockingRules creates one boundary-aware rule per unique domain", () 
   assert.deepEqual(rules[1].condition.requestDomains, ["news.example.com"]);
   assert.deepEqual(rules[0].condition.resourceTypes, ["main_frame"]);
   assert.deepEqual(rules[0].action.redirect, {
-    extensionPath: "/blocked.html",
+    extensionPath: "/blocked.html?domain=youtube.com",
   });
   assert.equal("urlFilter" in rules[0].condition, false);
 });
@@ -140,4 +142,36 @@ test("updateBlockingConfiguration leaves storage unchanged when DNR fails", asyn
     /DNR unavailable/,
   );
   assert.equal(storageWrites, 0);
+});
+
+test("addDomainsToBlocklist prepends only new, valid domains", () => {
+  const existing = [{ id: "yt", url: "youtube.com", createdAt: "2026-01-01" }];
+
+  const result = addDomainsToBlocklist(existing, [
+    "https://www.reddit.com/r/all",
+    "youtube.com",
+    "not a domain",
+    "reddit.com",
+  ]);
+
+  assert.deepEqual(
+    result.map((item) => item.url),
+    ["reddit.com", "youtube.com"],
+  );
+  assert.equal(result[1], existing[0]);
+});
+
+test("addDomainsToBlocklist returns the same list when nothing is new", () => {
+  const existing = [{ id: "yt", url: "youtube.com" }];
+  assert.equal(addDomainsToBlocklist(existing, ["www.youtube.com"]), existing);
+});
+
+test("block presets contain only normalized domains", () => {
+  assert.ok(BLOCK_PRESETS.length > 0);
+  for (const preset of BLOCK_PRESETS) {
+    assert.ok(preset.domains.length > 0);
+    for (const domain of preset.domains) {
+      assert.equal(normalizeDomain(domain), domain);
+    }
+  }
 });

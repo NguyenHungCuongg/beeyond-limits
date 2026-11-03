@@ -84,7 +84,10 @@ Quick tools remain useful on their own. While a Focus Session is running, the Po
 
 ### Alarm and extension UX
 
-- Phase-completion alarms loop until muted.
+- Phase-completion alarms loop until muted. If the alarm popup cannot open (no focused Chrome window), a system notification with a Mute button appears instead.
+- The toolbar badge shows minutes left in the current phase (mustard for focus, blue for break, `❚❚` when paused).
+- Keyboard shortcuts: `Alt+Shift+B` opens the popup, `Alt+Shift+P` pauses/resumes the Focus Session (change them at `chrome://extensions/shortcuts`).
+- The blocked page shows the blocked domain and, during a Focus Session, the current goal and time left.
 - Test Audio plays once and never loops.
 - A dedicated alarm popup appears when a Focus Session reaches a phase boundary, allowing the user to mute immediately and then continue to the completion screen.
 

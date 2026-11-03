@@ -24,7 +24,7 @@ Creates and removes dynamic rules for domains the user explicitly adds to the st
 
 ### `notifications`
 
-Shows timer-completion notifications for user-started Pomodoro and Focus Session phases. Notifications are not used for advertising, donation requests, or unsolicited promotion.
+Shows timer-completion notifications for user-started Pomodoro phases, and for Focus Session phases when the alarm popup cannot open (for example, when no Chrome window is focused). The Focus Session notification has a single "Mute alarm" button. Notifications are not used for advertising, donation requests, or unsolicited promotion.
 
 ### `offscreen`
 
@@ -34,7 +34,7 @@ Creates a packaged offscreen document for ambient audio and timer-alarm playback
 
 The blocker accepts any HTTP or HTTPS domain chosen by the user. Broad host access is required so dynamic `declarativeNetRequest` redirect rules can operate on those user-selected domains, including while the extension popup is closed.
 
-The permission is used only for top-level blocking redirects. Beeyond Limits does not register content scripts, inject code into pages, read page content, access cookies, inspect request or response bodies, or collect a general browsing history. Only the user-created blocked-domain list is stored, and it remains in `chrome.storage.local`.
+The permission is used for top-level blocking redirects and, while a blocklist editor is open, to read the active tab's URL so the editor can offer a one-click "Block this tab" suggestion. That domain is stored only if the user clicks the suggestion. Beeyond Limits does not register content scripts, inject code into pages, read page content, access cookies, inspect request or response bodies, or collect a general browsing history. Only the user-created blocked-domain list is stored, and it remains in `chrome.storage.local`.
 
 ### Web-accessible `blocked.html`
 

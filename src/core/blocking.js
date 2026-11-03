@@ -87,6 +87,37 @@ export function sanitizeBlockedUrls(blockedUrls) {
   return normalized;
 }
 
+export const BLOCK_PRESETS = Object.freeze([
+  {
+    id: "social",
+    label: "Social",
+    domains: ["facebook.com", "instagram.com", "tiktok.com", "x.com", "twitter.com", "reddit.com", "threads.net"],
+  },
+  { id: "video", label: "Video", domains: ["youtube.com", "netflix.com", "twitch.tv"] },
+  {
+    id: "news",
+    label: "News",
+    domains: ["news.google.com", "vnexpress.net", "kenh14.vn", "cnn.com", "bbc.com"],
+  },
+]);
+
+// Returns the original array when nothing new was added, so callers can skip a save.
+export function addDomainsToBlocklist(blockedUrls, domains) {
+  const existing = new Set(blockedUrls.map((item) => item.url));
+  const added = [];
+  for (const input of domains) {
+    const domain = normalizeDomain(input);
+    if (!domain || existing.has(domain)) continue;
+    existing.add(domain);
+    added.push({
+      id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}_${domain}`,
+      url: domain,
+      createdAt: new Date().toISOString(),
+    });
+  }
+  return added.length ? [...added, ...blockedUrls] : blockedUrls;
+}
+
 export function buildBlockingRules(blockedUrls) {
   return sanitizeBlockedUrls(blockedUrls).map((blockedUrl, index) => ({
     id: DYNAMIC_RULE_ID_START + index,
@@ -94,7 +125,7 @@ export function buildBlockingRules(blockedUrls) {
     action: {
       type: "redirect",
       redirect: {
-        extensionPath: "/blocked.html",
+        extensionPath: `/blocked.html?domain=${encodeURIComponent(blockedUrl.url)}`,
       },
     },
     condition: {

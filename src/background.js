@@ -22,6 +22,7 @@ import {
   startNextFocusCycle,
   calculateRemainingSeconds,
   calculateProgressPercentage,
+  getFocusBadge,
   FOCUS_STATES,
   FOCUS_PHASES,
   AMBIENT_SOUND_IDS,
@@ -38,11 +39,15 @@ import {
   saveFocusTemplate,
   deleteFocusTemplate,
   initializeFocusStorage,
+  STORAGE_KEYS,
 } from "./core/focusStorage.js";
 
 const POMODORO_ALARM = "pomodoroTimer";
 export const FOCUS_ALARM = "focusSessionTimer";
 const FOCUS_PENDING_ALARM_KEY = "focusPendingAlarm";
+const FOCUS_BADGE_ALARM = "focusBadgeTick";
+export const FOCUS_NOTIFICATION_ID = "focusPhaseAlarm";
+const TOGGLE_PAUSE_COMMAND = "toggle-focus-pause";
 
 const DEFAULT_AMBIENT_SETTINGS = Object.freeze({
   bird: { enabled: false, volume: 50 },
@@ -439,6 +444,7 @@ export class FocusSessionManager {
     this.ambientManager = ambientManager;
     this.offscreenBridge = offscreenBridge;
     this.completionPromise = null;
+    this.badgeQueue = createOperationQueue();
     this.ready = this.loadState();
   }
 
@@ -853,6 +859,21 @@ export class FocusSessionManager {
     return { success: true, activeSession: null };
   }
 
+  async togglePause() {
+    await this.ready;
+    const session = await getActiveFocusSession(this.chromeApi);
+    switch (session?.status) {
+      case FOCUS_STATES.ACTIVE_FOCUS:
+      case FOCUS_STATES.ACTIVE_BREAK:
+        return this.pauseSession({ runtimeId: session.id });
+      case FOCUS_STATES.PAUSED_FOCUS:
+      case FOCUS_STATES.PAUSED_BREAK:
+        return this.resumeSession({ runtimeId: session.id });
+      default:
+        return { success: false, error: "No running Focus Session to pause" };
+    }
+  }
+
   async updatePreferences(payload = {}) {
     await this.ready;
     const prefsToUpdate = payload.preferences || payload;
@@ -909,7 +930,7 @@ export class FocusSessionManager {
       await this.setPendingAlarm(completedSession, "break");
     }
 
-    this.openAlarmSurface();
+    this.openAlarmSurface(completedSession);
     this.broadcastStateUpdate(completedSession);
 
     const audioUrl = this.chromeApi.runtime.getURL(`audio/${getAlarmAudioUrl()}`);
@@ -940,19 +961,74 @@ export class FocusSessionManager {
         createdAt: Date.now(),
       },
     });
-    await this.chromeApi.action?.setBadgeText?.({ text: "!" });
+    await this.refreshBadge();
   }
 
   async clearPendingAlarm() {
     await this.chromeApi.storage.local.remove(FOCUS_PENDING_ALARM_KEY);
-    await this.chromeApi.action?.setBadgeText?.({ text: "" });
+    await this.chromeApi.notifications
+      ?.clear?.(FOCUS_NOTIFICATION_ID)
+      ?.catch?.(() => {});
+    await this.refreshBadge();
   }
 
-  openAlarmSurface() {
+  refreshBadge() {
+    return this.badgeQueue.run(async () => {
+      const action = this.chromeApi.action;
+      if (!action?.setBadgeText) return;
+      const data = await this.chromeApi.storage.local.get([
+        STORAGE_KEYS.ACTIVE_SESSION,
+        FOCUS_PENDING_ALARM_KEY,
+      ]);
+      const session = data[STORAGE_KEYS.ACTIVE_SESSION] ?? null;
+      const hasPendingAlarm = Boolean(data[FOCUS_PENDING_ALARM_KEY]);
+      const badge = getFocusBadge(session, hasPendingAlarm);
+
+      await action.setBadgeText({ text: badge.text });
+      if (badge.color) {
+        await action.setBadgeBackgroundColor?.({ color: badge.color });
+        await action.setBadgeTextColor?.({ color: badge.textColor });
+      }
+
+      const isRunning =
+        session?.status === FOCUS_STATES.ACTIVE_FOCUS ||
+        session?.status === FOCUS_STATES.ACTIVE_BREAK;
+      // ponytail: 30s tick (Chrome's minimum alarm period), so the badge can lag the real countdown by up to 30s.
+      if (isRunning && !hasPendingAlarm) {
+        await this.chromeApi.alarms.create(FOCUS_BADGE_ALARM, {
+          periodInMinutes: 0.5,
+        });
+      } else {
+        await this.chromeApi.alarms.clear(FOCUS_BADGE_ALARM);
+      }
+    });
+  }
+
+  openAlarmSurface(session) {
     if (!this.chromeApi.action?.openPopup) return;
     this.chromeApi.action.openPopup().catch((error) => {
+      // openPopup() needs a focused Chrome window; otherwise fall back to a system notification.
       console.warn("Unable to open Focus alarm popup:", error);
+      this.showAlarmNotification(session);
     });
+  }
+
+  showAlarmNotification(session) {
+    const isFocus = session?.phase === FOCUS_PHASES.FOCUS;
+    this.chromeApi.notifications
+      ?.create(FOCUS_NOTIFICATION_ID, {
+        type: "basic",
+        iconUrl: "images/icon128.png",
+        title: isFocus ? "Focus complete!" : "Break is over",
+        message: isFocus
+          ? `${session.snapshot?.focusDuration || 25} minutes done. Open Beeyond Limits to start your break.`
+          : "Open Beeyond Limits to start your next focus cycle.",
+        buttons: [{ title: "Mute alarm" }],
+        requireInteraction: true,
+      })
+      .catch((error) => {
+        console.error("Unable to show Focus alarm notification:", error);
+      });
   }
 
   async saveTemplate(inputTemplate) {
@@ -1001,6 +1077,9 @@ export class FocusSessionManager {
   }
 
   broadcastStateUpdate(activeSession) {
+    this.refreshBadge().catch((error) => {
+      console.error("Unable to update badge:", error);
+    });
     if (!this.chromeApi.runtime?.sendMessage) return;
     const now = Date.now();
     const sessionPayload = activeSession
@@ -1052,6 +1131,8 @@ chromeApi.alarms.onAlarm.addListener((alarm) => {
       .catch((error) => {
         console.error("Unable to complete Pomodoro phase:", error);
       });
+  } else if (alarm.name === FOCUS_BADGE_ALARM) {
+    focusManager.refreshBadge().catch(() => {});
   } else if (alarm.name === FOCUS_ALARM) {
     focusOperationQueue
       .run(() => focusManager.completeCurrentPhase())
@@ -1059,6 +1140,25 @@ chromeApi.alarms.onAlarm.addListener((alarm) => {
         console.error("Unable to complete Focus phase:", error);
       });
   }
+});
+
+chromeApi.notifications?.onButtonClicked?.addListener((notificationId) => {
+  if (notificationId !== FOCUS_NOTIFICATION_ID) return;
+  focusOperationQueue.run(() => focusManager.stopAlarm()).catch((error) => {
+    console.error("Unable to mute Focus alarm:", error);
+  });
+});
+
+chromeApi.notifications?.onClicked?.addListener((notificationId) => {
+  if (notificationId !== FOCUS_NOTIFICATION_ID) return;
+  chromeApi.action?.openPopup?.().catch(() => {});
+});
+
+chromeApi.commands?.onCommand?.addListener((command) => {
+  if (command !== TOGGLE_PAUSE_COMMAND) return;
+  focusOperationQueue.run(() => focusManager.togglePause()).catch((error) => {
+    console.error("Unable to toggle Focus Session pause:", error);
+  });
 });
 
 chromeApi.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -1247,6 +1347,7 @@ async function synchronizeStartup() {
         );
       }
     }
+    await focusManager.refreshBadge();
   } catch (error) {
     console.error("Unable to synchronize startup:", error);
   }

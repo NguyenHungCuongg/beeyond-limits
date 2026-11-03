@@ -233,6 +233,25 @@ export function calculateRemainingSeconds(session, nowTimestamp = Date.now()) {
   return 0;
 }
 
+export function getFocusBadge(session, hasPendingAlarm = false, nowTimestamp = Date.now()) {
+  if (hasPendingAlarm) return { text: "!", color: "#9e1414", textColor: "#ffffff" };
+
+  const minutesLeft = () =>
+    `${Math.ceil(calculateRemainingSeconds(session, nowTimestamp) / 60)}m`;
+
+  switch (session?.status) {
+    case FOCUS_STATES.ACTIVE_FOCUS:
+      return { text: minutesLeft(), color: "#eeba0b", textColor: "#0d0c0c" };
+    case FOCUS_STATES.ACTIVE_BREAK:
+      return { text: minutesLeft(), color: "#1e3a8a", textColor: "#ffffff" };
+    case FOCUS_STATES.PAUSED_FOCUS:
+    case FOCUS_STATES.PAUSED_BREAK:
+      return { text: "❚❚", color: "#0d0c0c", textColor: "#ffffff" };
+    default:
+      return { text: "", color: null, textColor: null };
+  }
+}
+
 export function calculateProgressPercentage(
   session,
   nowTimestamp = Date.now(),
