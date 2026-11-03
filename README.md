@@ -125,7 +125,7 @@ Each work cycle is tracked independently, so a long session can show meaningful 
 
 ```bash
 git clone https://github.com/NguyenHungCuongg/Beeyond-Limits.git
-cd Beeyond Limits
+cd Beeyond-Limits
 npm install
 npm run build
 ```
@@ -158,29 +158,43 @@ Beeyond Limits is a React 19 + Vite frontend packaged as a Chrome Manifest V3 ex
 
 ```text
 src/
-├── background.js          # MV3 service worker and authoritative timers
+├── background.js             # MV3 service worker: Focus Session, Pomodoro, ambient managers
+├── offscreen.html/.js        # Offscreen document for alarm and ambient audio playback
+├── blocked.html/.js          # Page shown when a blocked site is opened
 ├── core/
-│   ├── focusSession.js     # Pure Focus Session state machine
-│   ├── focusStorage.js     # chrome.storage persistence
-│   ├── focusConnectors.js  # Timer, task, sound, and blocker integration
-│   └── audio.js             # Offscreen audio protocol and playback
-├── components/             # Reusable UI and session controls
-├── pages/                  # Home, quick tools, active session, completion, alarm
-└── hooks/                  # React state and extension messaging hooks
-tests/                      # Domain, background, audio, and regression tests
-manifest.json               # Chrome MV3 extension manifest
+│   ├── focusSession.js        # Pure Focus Session state machine
+│   ├── focusStorage.js        # chrome.storage persistence for sessions
+│   ├── focusSessionClient.js  # Popup-side messaging client
+│   ├── blocking.js            # Domain validation and declarativeNetRequest rules
+│   ├── pomodoro.js            # Pomodoro phase logic
+│   ├── audio.js               # Audio sources and offscreen playback
+│   ├── offscreenBridge.js     # Creates and talks to the offscreen document
+│   └── operationQueue.js      # Serializes background operations
+├── components/                # Reusable UI and session controls
+├── pages/                     # Home, quick tools, active session, completion, alarm
+└── hooks/useFocusSession.js   # React state for the Focus Session
+tests/                         # Domain, background, audio, and regression tests
+scripts/copy-extension-files.mjs  # Copies unbundled extension files into dist/
+manifest.json                  # Chrome MV3 extension manifest
 ```
+
+Vite bundles only the popup. The service worker, offscreen document, blocked page, and `src/core/` are copied into `dist/` without bundling, so they must stay plain ES modules with no npm imports.
 
 The service worker owns the authoritative Focus Session state and schedules phase transitions with `chrome.alarms`, so the timer continues when the popup is closed. UI pages communicate with it through a small message protocol and recover state from `chrome.storage.local`.
 
 ### Persistence
 
-The current implementation uses these local storage records:
+All data lives in `chrome.storage.local`:
 
-- `activeFocusSession` — the currently running or paused session.
-- `focusSessionTemplates` — saved session configurations.
-- `focusSessionHistory` — completed and abandoned sessions.
-- `focusSessionPreferences` — user-level session preferences.
+- `activeFocusSession`: the currently running or paused session.
+- `focusSessionTemplates`: saved session configurations.
+- `focusSessionHistory`: completed and abandoned work cycles.
+- `focusSessionPreferences`: user-level session preferences.
+- `focusPendingAlarm`: a phase alarm that is still waiting to be muted.
+- `pomodoroState`, `pomodoroSettings`: the standalone Pomodoro timer.
+- `blockedUrls`, `isBlocking`: the standalone Website Blocker.
+- `ambientSettings`: the standalone ambient sound mix.
+- `tasks`: the Todo List.
 
 No backend is required to run the extension locally.
 
