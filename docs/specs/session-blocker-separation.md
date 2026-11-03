@@ -17,8 +17,9 @@ without altering the persistent Website Blocker managed through Quick Tools.
 | Active Focus Session runtime | Immutable snapshot of the session blocklist | From session start until Finish/abandon |
 
 There is one Chrome DNR rule engine. During an active Focus Session, the
-session owns the effective rules. The pre-session Quick Tool state is restored
-on Finish, Skip Break or Stop Early.
+session owns the effective rules. Quick Tool edits made during the session are
+saved but not applied; the stored Quick Tool state is applied on Finish, Skip
+Break or Stop Early.
 
 ## UX requirements
 
@@ -43,10 +44,11 @@ on Finish, Skip Break or Stop Early.
 
 ### Active Session lifecycle
 
-- Start snapshots session domains and the current manual blocker state.
+- Start snapshots session domains.
 - Pause leaves the session blocker active.
-- Start Break disables session blocking.
-- Finish, Skip Break and Stop Early restore the captured manual state.
+- Start Break disables all blocking, including after a browser restart mid-break.
+- Finish, Skip Break and Stop Early apply the stored manual state, including
+  Quick Tool edits saved during the session.
 - Editing a template or pending setup cannot mutate an active runtime snapshot.
 
 ## Data model
@@ -77,8 +79,7 @@ on Finish, Skip Break or Stop Early.
 - Editing session sites never changes Quick Tool `blockedUrls` or `isBlocking`.
 - During a session, Quick Tool does not present its manual toggle as the active
   blocker status.
-- The manual blocker state before a session is restored exactly after any
-  terminal session path.
+- The stored manual blocker state is applied after any terminal session path.
 - Browser tests cover start, pause, break, finish, abandon and popup reopen.
 
 ## Not doing

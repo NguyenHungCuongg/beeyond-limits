@@ -124,6 +124,7 @@ export async function updateBlockingConfiguration(
   chromeApi,
   isBlocking,
   blockedUrls,
+  { applyRules = true } = {},
 ) {
   const normalizedUrls = sanitizeBlockedUrls(blockedUrls);
   const enabled = Boolean(isBlocking);
@@ -132,11 +133,13 @@ export async function updateBlockingConfiguration(
     "isBlocking",
   ]);
 
-  await applyBlockingRules(
-    chromeApi.declarativeNetRequest,
-    enabled,
-    normalizedUrls,
-  );
+  if (applyRules) {
+    await applyBlockingRules(
+      chromeApi.declarativeNetRequest,
+      enabled,
+      normalizedUrls,
+    );
+  }
 
   try {
     await chromeApi.storage.local.set({
@@ -144,6 +147,7 @@ export async function updateBlockingConfiguration(
       isBlocking: enabled,
     });
   } catch (error) {
+    if (!applyRules) throw error;
     try {
       await applyBlockingRules(
         chromeApi.declarativeNetRequest,

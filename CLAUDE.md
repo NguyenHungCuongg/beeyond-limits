@@ -42,7 +42,7 @@ Vite bundles only the popup (`index.html` -> `src/main.jsx`). `scripts/copy-exte
 
 **Popup routing.** There is no router library. `App.jsx` switches on a `currentPage` string. On load, it routes to `alarm` when there is a pending alarm and the session is in a `*_completed` state, or to `focus-active` when a session is running. It also reads `?view=alarm|focus-complete` from the URL, which is how the background opens the alarm popup (this needs Chrome 127+).
 
-**Two blockers, one engine (ADR-001).** The Website Blocker quick tool keeps its own `blockedUrls`/`isBlocking`. Each Focus Session template and runtime snapshot owns a separate blocklist. While a session is running, its rules take precedence. When it ends, the quick tool state captured beforehand is restored. Don't couple the two configurations. `synchronizeStartup()` re-applies whichever one owns blocking after a browser restart.
+**Two blockers, one engine (ADR-001).** The Website Blocker quick tool keeps its own `blockedUrls`/`isBlocking`. Each Focus Session template and runtime snapshot owns a separate blocklist. While a session is running, its rules take precedence: `UPDATE_BLOCKING_RULES` only saves the quick tool config, and breaks run unblocked. When it ends, the stored quick tool state is re-applied. Don't couple the two configurations. `synchronizeStartup()` re-applies whichever one owns blocking after a browser restart.
 
 ## Tests
 

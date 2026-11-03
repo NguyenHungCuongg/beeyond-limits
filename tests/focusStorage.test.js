@@ -307,7 +307,9 @@ test("getFocusHistory returns empty array when uninitialized", async () => {
   assert.deepEqual(history, []);
 });
 
-test("appendFocusHistory adds history record and auto-generates dateStr if missing", async () => {
+test("appendFocusHistory adds history record and auto-generates dateStr if missing", async (t) => {
+  // Pin the clock so the fixed record date never ages past the 90-day prune window.
+  t.mock.timers.enable({ apis: ["Date"], now: new Date("2026-07-27T12:00:00Z") });
   const mockStorage = createMockStorage();
   const record = {
     runtimeId: "session_1722086400000_abc",
@@ -350,8 +352,9 @@ test("appendFocusHistory ignores duplicate completion records with same runtimeI
   assert.equal(result[0].completedAt, now);
 });
 
-test("appendFocusHistory prunes records older than 90 days or exceeding 500 entries", async () => {
-  const now = new Date("2026-07-27T12:00:00Z").getTime();
+test("appendFocusHistory prunes records older than 90 days or exceeding 500 entries", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: new Date("2026-07-27T12:00:00Z") });
+  const now = Date.now();
   const dayMs = 24 * 60 * 60 * 1000;
 
   // Pre-seed storage with history items

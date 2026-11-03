@@ -69,6 +69,11 @@ export function createOffscreenAudioController({
     }
 
     const existing = ambientSounds.get(soundKey);
+    // Every service worker wake-up re-sends START for enabled sounds; keep a playing loop instead of restarting it.
+    if (existing && !existing.paused) {
+      existing.volume = clampVolume(volume);
+      return;
+    }
     if (existing) {
       stopAudio(existing);
     }

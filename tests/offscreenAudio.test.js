@@ -16,6 +16,7 @@ class FakeAudio {
     this.currentTime = 0;
     this.volume = 1;
     this.loop = false;
+    this.paused = true;
     this.onended = null;
     this.onerror = null;
   }
@@ -26,13 +27,16 @@ class FakeAudio {
       throw new Error("playback blocked");
     }
 
+    this.paused = false;
     FakeAudio.played.push(this.src);
     if (!this.loop) {
       queueMicrotask(() => this.onended?.());
     }
   }
 
-  pause() {}
+  pause() {
+    this.paused = true;
+  }
 }
 
 test("getAlarmAudioUrl returns alarm audio file", () => {
@@ -84,6 +88,19 @@ test("offscreen handler reports playback failures instead of fake success", asyn
 
   assert.equal(response.success, false);
   assert.match(response.error, /playback blocked/);
+});
+
+test("re-starting an already playing ambient sound does not restart it", async () => {
+  FakeAudio.played = [];
+  const controller = createOffscreenAudioController({ AudioCtor: FakeAudio });
+
+  await controller.startAmbientSound("rain", "rain.m4a", 0.5);
+  await controller.startAmbientSound("rain", "rain.m4a", 0.2);
+  assert.deepEqual(FakeAudio.played, ["rain.m4a"]);
+
+  controller.stopAmbientSound("rain");
+  await controller.startAmbientSound("rain", "rain.m4a", 0.5);
+  assert.deepEqual(FakeAudio.played, ["rain.m4a", "rain.m4a"]);
 });
 
 test("offscreen handler rejects unknown messages", async () => {

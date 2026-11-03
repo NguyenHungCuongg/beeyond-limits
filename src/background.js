@@ -347,8 +347,9 @@ class BackgroundPomodoroManager {
     }
 
     const audioUrl = this.chromeApi.runtime.getURL(`audio/${getAlarmAudioUrl()}`);
+    // One-shot chime: Pomodoro auto-advances and has no mute UI, so a looping START_ALARM would ring forever.
     return this.offscreenBridge.send({
-      type: "START_ALARM",
+      type: "TEST_ALARM",
       audioUrl,
     });
   }
@@ -496,15 +497,17 @@ export class FocusSessionManager {
   }
 
   async restoreEnvironment(session) {
+    // Stored quick tool config is the truth: it includes edits saved while the session owned blocking.
+    if (this.chromeApi.declarativeNetRequest?.getDynamicRules) {
+      await blockerOperationQueue.run(() =>
+        syncBlockingRulesFromStorage(this.chromeApi),
+      );
+    }
+
     const previous = session?.preSessionState;
     if (!previous) {
       return;
     }
-
-    await this.applySessionBlocker(
-      previous.blocker?.isBlocking,
-      previous.blocker?.blockedUrls ?? [],
-    );
 
     if (
       previous.ambientSettings &&
@@ -520,17 +523,11 @@ export class FocusSessionManager {
 
   async captureEnvironmentState() {
     const data = await this.chromeApi.storage.local.get([
-      "isBlocking",
-      "blockedUrls",
       "ambientSettings",
       "pomodoroState",
     ]);
 
     return {
-      blocker: {
-        isBlocking: Boolean(data.isBlocking),
-        blockedUrls: Array.isArray(data.blockedUrls) ? data.blockedUrls : [],
-      },
       ambientSettings:
         data.ambientSettings && typeof data.ambientSettings === "object"
           ? data.ambientSettings
@@ -597,6 +594,9 @@ export class FocusSessionManager {
 
   async startSession(payload = {}) {
     await this.ready;
+    if (await getActiveFocusSession(this.chromeApi)) {
+      return { success: false, error: "A Focus Session is already running" };
+    }
     const inputConfig = payload.config || payload || {};
     const config = {
       templateId: inputConfig.templateId,
@@ -1070,11 +1070,13 @@ chromeApi.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     case "UPDATE_BLOCKING_RULES":
       return respond(
         sendResponse,
-        blockerOperationQueue.run(() =>
+        blockerOperationQueue.run(async () =>
           updateBlockingConfiguration(
             chromeApi,
             message.isBlocking,
             message.blockedUrls,
+            // ADR-001: a running session owns the rules; just save the quick tool config for after it ends.
+            { applyRules: !(await getActiveFocusSession(chromeApi)) },
           ),
         ),
       );
@@ -1232,14 +1234,11 @@ async function synchronizeStartup() {
     if (chromeApi.declarativeNetRequest?.getDynamicRules) {
       const state = await focusManager.getState();
       const session = state.activeSession;
-      if (
-        session &&
-        (session.status === "active_focus" ||
-          session.status === "paused_focus" ||
-          session.status === "focus_completed")
-      ) {
+      if (session) {
+        // Breaks run unblocked, same as startBreak().
         await focusManager.applySessionBlocker(
-          Boolean(session.snapshot?.blocker?.enabled),
+          session.phase === FOCUS_PHASES.FOCUS &&
+            Boolean(session.snapshot?.blocker?.enabled),
           session.snapshot?.blocker?.blockedUrls ?? [],
         );
       } else {
