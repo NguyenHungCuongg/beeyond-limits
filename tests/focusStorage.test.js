@@ -11,6 +11,7 @@ import {
   saveFocusTemplate,
   deleteFocusTemplate,
   getFocusHistory,
+  getFocusDailySummary,
   appendFocusHistory,
   getFocusPreferences,
   updateFocusPreferences,
@@ -627,3 +628,44 @@ test("getFocusTemplates filters out null and corrupted elements before returning
   assert.equal(templates[0].id, "valid_1");
 });
 
+
+test("appendFocusHistory rolls pruned records into the daily summary", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: new Date("2026-07-27T12:00:00Z") });
+  const old = {
+    id: "old",
+    runtimeId: "old",
+    status: FOCUS_STATES.FOCUS_COMPLETED,
+    focusDurationMinutes: 25,
+    completedAt: new Date("2026-03-01T10:00:00Z").getTime(),
+    dateStr: "2026-03-01",
+  };
+  const mockStorage = createMockStorage({ [STORAGE_KEYS.HISTORY]: [old] });
+
+  const history = await appendFocusHistory(
+    {
+      runtimeId: "new",
+      status: FOCUS_STATES.FOCUS_COMPLETED,
+      focusDurationMinutes: 50,
+      completedAt: new Date("2026-07-27T10:00:00Z").getTime(),
+    },
+    mockStorage,
+  );
+
+  assert.deepEqual(history.map((r) => r.runtimeId), ["new"]);
+  assert.deepEqual(await getFocusDailySummary(mockStorage), {
+    "2026-03-01": { completedSessions: 1, focusMinutes: 25, abandonedSessions: 0 },
+  });
+});
+
+test("getFocusDailySummary returns an empty object when uninitialized", async () => {
+  assert.deepEqual(await getFocusDailySummary(createMockStorage()), {});
+});
+
+test("updateFocusPreferences stores a clamped daily goal", async () => {
+  const mockStorage = createMockStorage();
+  assert.equal((await getFocusPreferences(mockStorage)).dailyGoalMinutes, 100);
+  const updated = await updateFocusPreferences({ dailyGoalMinutes: 5000 }, mockStorage);
+  assert.equal(updated.dailyGoalMinutes, 600);
+  const kept = await updateFocusPreferences({ focusDuration: 30 }, mockStorage);
+  assert.equal(kept.dailyGoalMinutes, 600);
+});

@@ -919,3 +919,17 @@ serialTest("badge shows minutes left after a session starts", async () => {
 
   delete globalThis.chrome;
 });
+
+serialTest("getState returns the rolled-up daily summary", async () => {
+  const dailySummary = {
+    "2026-01-01": { completedSessions: 2, focusMinutes: 50, abandonedSessions: 0 },
+  };
+  const mock = createMockChrome({ focusSessionDailySummary: dailySummary });
+  globalThis.chrome = mock.chromeMock;
+  const bg = await import(`../src/background.js?test_summary=${Date.now()}`);
+
+  const state = await bg.focusManager.getState();
+  assert.deepEqual(state.dailySummary, dailySummary);
+
+  delete globalThis.chrome;
+});

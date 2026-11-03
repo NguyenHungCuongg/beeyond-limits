@@ -71,7 +71,8 @@ It is designed for students, office workers, and freelancers who want a lightwei
 - Configure website blocking per session, independently from the standalone blocker tool.
 - Run the Work → Break → Work loop continuously until you stop the session.
 - Resume the active timer when reopening the extension popup.
-- Complete, skip, or abandon a session with an explicit end state.
+- Complete, skip, or abandon a session with an explicit end state, optionally noting why you stopped.
+- Stats page: 7/30-day focus chart against a daily goal, completion rate, minutes per saved session, and why sessions were stopped. Open it from the today counter on Home.
 
 ### Quick tools
 
@@ -191,7 +192,8 @@ All data lives in `chrome.storage.local`:
 
 - `activeFocusSession`: the currently running or paused session.
 - `focusSessionTemplates`: saved session configurations.
-- `focusSessionHistory`: completed and abandoned work cycles.
+- `focusSessionHistory`: completed and abandoned work cycles (last 90 days / 500 records).
+- `focusSessionDailySummary`: per-day totals for records pruned from history.
 - `focusSessionPreferences`: user-level session preferences.
 - `focusPendingAlarm`: a phase alarm that is still waiting to be muted.
 - `pomodoroState`, `pomodoroSettings`: the standalone Pomodoro timer.

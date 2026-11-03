@@ -10,6 +10,7 @@ import {
 import { FOCUS_PHASES, FOCUS_STATES } from "../core/focusSession.js";
 import { getFocusEnvironmentIndicators } from "../core/focusEnvironmentStatus.js";
 import ConfirmDialog from "../components/ConfirmDialog";
+import { ABANDON_REASONS } from "../core/focusStats.js";
 
 function getRemainingSeconds(session, now = Date.now()) {
   if (!session) return 0;
@@ -24,13 +25,6 @@ function getRemainingSeconds(session, now = Date.now()) {
   }
   return 0;
 }
-
-const STOP_REASONS = [
-  { id: "distracted", label: "Distracted" },
-  { id: "urgent", label: "Something urgent" },
-  { id: "done_early", label: "Finished early" },
-  { id: "tired", label: "Too tired" },
-];
 
 function formatTime(totalSeconds) {
   const minutes = Math.floor(totalSeconds / 60);
@@ -244,7 +238,7 @@ function ActiveFocusSession({ onNavigate, onStartFocus, focusSession }) {
               Why are you stopping? (optional)
             </legend>
             <div className="flex flex-wrap gap-2">
-              {STOP_REASONS.map((reason) => {
+              {ABANDON_REASONS.map((reason) => {
                 const selected = stopReason === reason.id;
                 return (
                   <button

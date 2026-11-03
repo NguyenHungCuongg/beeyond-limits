@@ -33,6 +33,7 @@ import {
   clearActiveFocusSession,
   getFocusTemplates,
   getFocusHistory,
+  getFocusDailySummary,
   appendFocusHistory,
   getFocusPreferences,
   updateFocusPreferences,
@@ -570,12 +571,13 @@ export class FocusSessionManager {
 
   async getState() {
     await this.ready;
-    const [rawActive, templates, history, preferences, pendingResult] = await Promise.all([
+    const [rawActive, templates, history, preferences, pendingResult, dailySummary] = await Promise.all([
       getActiveFocusSession(this.chromeApi),
       getFocusTemplates(this.chromeApi),
       getFocusHistory(this.chromeApi),
       getFocusPreferences(this.chromeApi),
       this.chromeApi.storage.local.get([FOCUS_PENDING_ALARM_KEY]),
+      getFocusDailySummary(this.chromeApi),
     ]);
 
     let activeSession = rawActive;
@@ -593,6 +595,7 @@ export class FocusSessionManager {
       activeSession,
       templates,
       history,
+      dailySummary,
       preferences,
       pendingAlarm: pendingResult[FOCUS_PENDING_ALARM_KEY] ?? null,
     };

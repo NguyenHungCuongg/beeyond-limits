@@ -32,14 +32,16 @@ A session loops Work → Break → Work until the user ends it (see `docs/focus-
 | Phase alarm popup | `AlarmPopup.jsx` | Done |
 | Completion, break, and next cycle | `FocusSessionComplete.jsx` | Done |
 | Recovery after popup close and service worker restart | `src/background.js`, `App.jsx` | Done |
+| Stats page (7/30-day chart, completion rate, stop reasons, minutes per template, daily goal) | `FocusStats.jsx`, `src/core/focusStats.js` | Done |
 | Floating widget on other screens | — | Not implemented |
 
 ## Storage keys
 
 - `activeFocusSession`: runtime session object, or `null`.
 - `focusSessionTemplates`: array of saved templates.
-- `focusSessionHistory`: array of completed and abandoned work cycles.
-- `focusSessionPreferences`: user preferences object.
+- `focusSessionHistory`: array of completed and abandoned work cycles (pruned to 90 days / 500 records).
+- `focusSessionDailySummary`: `{ [YYYY-MM-DD]: { completedSessions, focusMinutes, abandonedSessions } }`. Records pruned from history are folded in here first, so totals survive pruning.
+- `focusSessionPreferences`: user preferences object, including `dailyGoalMinutes` (15–600, default 100).
 - `focusPendingAlarm`: the phase alarm that is waiting to be muted.
 
 ## Message protocol
@@ -48,7 +50,7 @@ The popup sends these through `chrome.runtime.sendMessage`. Every reply has the 
 
 | Message | Payload |
 |---|---|
-| `FOCUS_GET_STATE` | none. Returns `{ activeSession, pendingAlarm, templates, history, preferences }` |
+| `FOCUS_GET_STATE` | none. Returns `{ activeSession, pendingAlarm, templates, history, dailySummary, preferences }` |
 | `FOCUS_START_SESSION` | `{ config }` |
 | `FOCUS_PAUSE_SESSION`, `FOCUS_RESUME_SESSION`, `FOCUS_SKIP_BREAK`, `FOCUS_START_NEXT_CYCLE` | `{ runtimeId? }` |
 | `FOCUS_ABANDON_SESSION` | `{ runtimeId, reason }` |
@@ -66,4 +68,5 @@ The background broadcasts `FOCUS_STATE_UPDATE` whenever the session changes.
 - `tests/focusStorage.test.js`: storage.
 - `tests/focusEngine.test.js`: background engine, Pomodoro lock, message protocol.
 - `tests/focusE2E.test.js`: end-to-end scenarios.
+- `tests/focusStats.test.js`: stats aggregation and the daily summary.
 - `tests/focusSessionClient.test.js`, `tests/focusSetupPersistence.test.js`, `tests/focusEnvironmentStatus.test.js`: popup-side helpers.

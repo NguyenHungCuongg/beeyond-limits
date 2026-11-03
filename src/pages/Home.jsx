@@ -78,7 +78,12 @@ function Home({ onNavigate, onStartFocus, focusSession }) {
               Your focus companion
             </p>
           </div>
-          <TodayFocusStats history={history} />
+          <TodayFocusStats
+            history={history}
+            dailySummary={focusSession.dailySummary}
+            dailyGoalMinutes={focusSession.preferences?.dailyGoalMinutes}
+            onOpenStats={() => onNavigate("stats")}
+          />
         </div>
 
         {/* Primary Action Hero */}

@@ -7,6 +7,7 @@ const EMPTY_STATE = Object.freeze({
   pendingAlarm: null,
   templates: [],
   history: [],
+  dailySummary: {},
   preferences: null,
 });
 
@@ -39,6 +40,10 @@ export function useFocusSession() {
           pendingAlarm: next.pendingAlarm ?? null,
           templates: Array.isArray(next.templates) ? next.templates : [],
           history: Array.isArray(next.history) ? next.history : [],
+          dailySummary:
+            next.dailySummary && typeof next.dailySummary === "object"
+              ? next.dailySummary
+              : {},
           preferences: next.preferences ?? null,
         });
         setError(null);

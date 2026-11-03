@@ -9,6 +9,7 @@ import ActiveFocusSession from "./pages/ActiveFocusSession";
 import FocusSessionComplete from "./pages/FocusSessionComplete";
 import AlarmPopup from "./pages/AlarmPopup";
 import SavedSessions from "./pages/SavedSessions";
+import FocusStats from "./pages/FocusStats";
 import { useFocusSession } from "./hooks/useFocusSession";
 import { Toaster } from "react-hot-toast";
 
@@ -94,6 +95,8 @@ function App() {
             onSelectTemplate={setSelectedTemplate}
           />
         );
+      case "stats":
+        return <FocusStats onNavigate={navigateTo} focusSession={focusSession} />;
       case "pomodoro":
         return <Pomodoro onNavigate={navigateTo} />;
       case "tasklist":

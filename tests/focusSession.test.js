@@ -23,6 +23,7 @@ import {
   aggregateDailyProgress,
   calculateStreakDays,
   pruneHistoryRecords,
+  rollupHistoryRecords,
   isDuplicateCompletion,
 } from "../src/core/focusSession.js";
 
@@ -708,4 +709,28 @@ test("getFocusBadge is empty without a running session", () => {
   assert.equal(getFocusBadge(null).text, "");
   const completed = completeFocusSession(createFocusSession({}, 0), 0);
   assert.equal(getFocusBadge(completed).text, "");
+});
+
+test("rollupHistoryRecords adds dropped records to per-day totals", () => {
+  const summary = rollupHistoryRecords(
+    { "2026-01-01": { completedSessions: 1, focusMinutes: 25, abandonedSessions: 0 } },
+    [
+      { status: FOCUS_STATES.FOCUS_COMPLETED, dateStr: "2026-01-01", focusDurationMinutes: 50 },
+      { status: FOCUS_STATES.ABANDONED, dateStr: "2026-01-01", actualFocusSeconds: 600 },
+      { status: FOCUS_STATES.FOCUS_COMPLETED, completedAt: new Date(2026, 0, 2, 9).getTime(), actualFocusSeconds: 1500 },
+    ],
+  );
+
+  assert.deepEqual(summary, {
+    "2026-01-01": { completedSessions: 2, focusMinutes: 75, abandonedSessions: 1 },
+    "2026-01-02": { completedSessions: 1, focusMinutes: 25, abandonedSessions: 0 },
+  });
+});
+
+test("rollupHistoryRecords does not mutate the previous summary", () => {
+  const previous = { "2026-01-01": { completedSessions: 1, focusMinutes: 25, abandonedSessions: 0 } };
+  rollupHistoryRecords(previous, [
+    { status: FOCUS_STATES.FOCUS_COMPLETED, dateStr: "2026-01-01", focusDurationMinutes: 25 },
+  ]);
+  assert.equal(previous["2026-01-01"].completedSessions, 1);
 });
