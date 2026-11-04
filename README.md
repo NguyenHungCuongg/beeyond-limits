@@ -45,7 +45,7 @@
 </div>
 
 <p align="center">
-  <img src="public/images/chrome-store.png" alt="Beeyond Limits product preview" width="760">
+  <img src="docs/store-assets/chrome-store.png" alt="Beeyond Limits product preview" width="760">
 </p>
 
 ## ✨ Why Beeyond Limits
@@ -114,9 +114,9 @@ Each work cycle is tracked independently, so a long session can show meaningful 
 
 | Home                                          | Focus Session                               |
 | --------------------------------------------- | ------------------------------------------- |
-| ![Home](public/images/Home.png)               | ![Focus Session](public/images/Session.png) |
-| ![Pomodoro](public/images/Pomodoro.png)       | ![Ambient Sounds](public/images/Sounds.png) |
-| ![Website Blocker](public/images/Blocker.png) | ![Todo List](public/images/Tasks.png)       |
+| ![Home](docs/store-assets/Home.png)               | ![Focus Session](docs/store-assets/Session.png) |
+| ![Pomodoro](docs/store-assets/Pomodoro.png)       | ![Ambient Sounds](docs/store-assets/Sounds.png) |
+| ![Website Blocker](docs/store-assets/Blocker.png) | ![Todo List](docs/store-assets/Tasks.png)       |
 
 ## ⚡ Quick start
 
