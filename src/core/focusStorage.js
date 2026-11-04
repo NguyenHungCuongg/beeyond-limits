@@ -8,7 +8,9 @@ import {
   DEFAULT_FOCUS_SETTINGS,
   normalizeFocusConfig,
   pruneHistoryRecords,
+  rollupHistoryRecords,
   isDuplicateCompletion,
+  clamp,
   FOCUS_BOUNDS,
 } from "./focusSession.js";
 
@@ -16,6 +18,7 @@ export const STORAGE_KEYS = Object.freeze({
   ACTIVE_SESSION: "activeFocusSession",
   TEMPLATES: "focusSessionTemplates",
   HISTORY: "focusSessionHistory",
+  DAILY_SUMMARY: "focusSessionDailySummary",
   PREFERENCES: "focusSessionPreferences",
 });
 
@@ -191,9 +194,28 @@ export async function appendFocusHistory(historyRecord, chromeStorageApi) {
     const updatedHistory = [...currentHistory, enrichedRecord];
     const pruned = pruneHistoryRecords(updatedHistory, 90, 500, now);
 
-    await storage.set({ [STORAGE_KEYS.HISTORY]: pruned });
+    // Spec §7: fold records that fall out of history into per-day totals before dropping them.
+    const kept = new Set(pruned);
+    const dropped = updatedHistory.filter((record) => !kept.has(record));
+    const updates = { [STORAGE_KEYS.HISTORY]: pruned };
+    if (dropped.length > 0) {
+      // ponytail: one entry per day, kept forever (~50 bytes/day); cap it if storage ever matters.
+      updates[STORAGE_KEYS.DAILY_SUMMARY] = rollupHistoryRecords(
+        await getFocusDailySummary(chromeStorageApi),
+        dropped,
+      );
+    }
+
+    await storage.set(updates);
     return pruned;
   });
+}
+
+export async function getFocusDailySummary(chromeStorageApi) {
+  const storage = getStorage(chromeStorageApi);
+  const data = await storage.get([STORAGE_KEYS.DAILY_SUMMARY]);
+  const summary = data[STORAGE_KEYS.DAILY_SUMMARY];
+  return summary && typeof summary === "object" && !Array.isArray(summary) ? summary : {};
 }
 
 export async function getFocusPreferences(chromeStorageApi) {
@@ -242,6 +264,12 @@ export async function updateFocusPreferences(newPreferences, chromeStorageApi) {
       focusDuration: normalizedConfig.focusDuration,
       breakDuration: normalizedConfig.breakDuration,
       blockerEnabled: normalizedConfig.blocker.enabled,
+      dailyGoalMinutes: clamp(
+        merged.dailyGoalMinutes,
+        FOCUS_BOUNDS.MIN_DAILY_GOAL_MINUTES,
+        FOCUS_BOUNDS.MAX_DAILY_GOAL_MINUTES,
+        FOCUS_BOUNDS.DEFAULT_DAILY_GOAL_MINUTES,
+      ),
       blocker: normalizedConfig.blocker,
       ambientSound: normalizedConfig.ambientSound,
     };

@@ -51,6 +51,34 @@
       font-weight: bold;
       text-transform: uppercase;
     }
+    .session {
+      border-top: 3px solid #0d0c0c;
+      margin-top: 2rem;
+      padding-top: 1.5rem;
+    }
+    .session-goal {
+      font-family: 'Anton', sans-serif;
+      font-size: 1.75rem;
+      text-transform: uppercase;
+      line-height: 1.1;
+      margin: 0.5rem 0;
+      overflow-wrap: anywhere;
+    }
+    .back-button {
+      margin-top: 2rem;
+      width: 100%;
+      background: #eeba0b;
+      color: #0d0c0c;
+      border: 3px solid #0d0c0c;
+      box-shadow: 4px 4px 0px 0px #0d0c0c;
+      padding: 0.75rem 1rem;
+      font-family: 'Anton', sans-serif;
+      font-size: 1.5rem;
+      text-transform: uppercase;
+      cursor: pointer;
+    }
+    .back-button:hover { background: #0d0c0c; color: #eeba0b; }
+    .back-button:focus-visible { outline: 3px solid #ffffff; outline-offset: 3px; }
   </style>
 </head>
 <body>
@@ -58,6 +86,12 @@
     <h1>BLOCKED.</h1>
     <div class="domain-badge" id="blocked-domain">...</div>
     <p class="subtitle">GET BACK TO WORK.</p>
+    <div class="session" id="session" hidden>
+      <p class="subtitle">You are focusing on</p>
+      <p class="session-goal" id="session-goal"></p>
+      <p class="subtitle" id="session-time"></p>
+    </div>
+    <button type="button" class="back-button" id="back-button">Back to work</button>
   </div>
   <script src="blocked.js"></script>
 </body>

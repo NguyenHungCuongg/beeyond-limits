@@ -25,8 +25,8 @@ Declarative Net Request blocking engine.
 - Quick Tool keeps its manual `blockedUrls` and `isBlocking` configuration.
 - A Focus Session template and runtime snapshot own their own `blockedUrls`.
 - While a Focus Session is active, it owns the effective blocking rules.
-- The Quick Tool state captured before the session is restored when the
-  session finishes or is abandoned.
+- Quick Tool edits made during a session are saved but not applied. The stored
+  Quick Tool state is applied when the session finishes or is abandoned.
 - The Quick Tool page must state that a running Focus Session controls
   blocking, rather than presenting the manual toggle as the active status.
 

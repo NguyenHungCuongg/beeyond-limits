@@ -33,6 +33,9 @@ export const FOCUS_BOUNDS = Object.freeze({
   MAX_TEMPLATE_NAME_LENGTH: 40,
   MAX_HISTORY_DAYS: 90,
   MAX_HISTORY_RECORDS: 500,
+  MIN_DAILY_GOAL_MINUTES: 15,
+  MAX_DAILY_GOAL_MINUTES: 600,
+  DEFAULT_DAILY_GOAL_MINUTES: 100,
 });
 
 export const AMBIENT_SOUND_IDS = Object.freeze([
@@ -48,6 +51,7 @@ export const DEFAULT_FOCUS_SETTINGS = Object.freeze({
   focusDuration: FOCUS_BOUNDS.DEFAULT_FOCUS_MINUTES,
   breakDuration: FOCUS_BOUNDS.DEFAULT_BREAK_MINUTES,
   blockerEnabled: true,
+  dailyGoalMinutes: FOCUS_BOUNDS.DEFAULT_DAILY_GOAL_MINUTES,
   blocker: Object.freeze({ enabled: true, blockedUrls: [] }),
   ambientSound: Object.freeze({
     enabled: false,
@@ -59,12 +63,12 @@ export const DEFAULT_FOCUS_SETTINGS = Object.freeze({
 
 export const DEFAULT_TEMPLATES = Object.freeze([]);
 
-function clamp(value, min, max, fallback) {
+export function clamp(value, min, max, fallback) {
   if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
   return Math.min(Math.max(value, min), max);
 }
 
-function getLocalDateString(dateInput = new Date()) {
+export function getLocalDateString(dateInput = new Date()) {
   let d;
   if (typeof dateInput === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dateInput)) {
     const [y, m, dNum] = dateInput.split("-").map(Number);
@@ -231,6 +235,25 @@ export function calculateRemainingSeconds(session, nowTimestamp = Date.now()) {
   }
 
   return 0;
+}
+
+export function getFocusBadge(session, hasPendingAlarm = false, nowTimestamp = Date.now()) {
+  if (hasPendingAlarm) return { text: "!", color: "#9e1414", textColor: "#ffffff" };
+
+  const minutesLeft = () =>
+    `${Math.ceil(calculateRemainingSeconds(session, nowTimestamp) / 60)}m`;
+
+  switch (session?.status) {
+    case FOCUS_STATES.ACTIVE_FOCUS:
+      return { text: minutesLeft(), color: "#eeba0b", textColor: "#0d0c0c" };
+    case FOCUS_STATES.ACTIVE_BREAK:
+      return { text: minutesLeft(), color: "#1e3a8a", textColor: "#ffffff" };
+    case FOCUS_STATES.PAUSED_FOCUS:
+    case FOCUS_STATES.PAUSED_BREAK:
+      return { text: "❚❚", color: "#0d0c0c", textColor: "#ffffff" };
+    default:
+      return { text: "", color: null, textColor: null };
+  }
 }
 
 export function calculateProgressPercentage(
@@ -426,6 +449,47 @@ export function startNextFocusCycle(session, nowTimestamp = Date.now()) {
   };
 }
 
+export function recordFocusMinutes(record) {
+  return (
+    record.focusDurationMinutes ||
+    Math.round((record.actualFocusSeconds || 0) / 60)
+  );
+}
+
+export function recordDateStr(record) {
+  return (
+    record.dateStr ||
+    getLocalDateString(
+      record.completedAt || record.abandonedAt || record.endedAt || record.startedAt,
+    )
+  );
+}
+
+// Folds history records into { [dateStr]: { completedSessions, focusMinutes, abandonedSessions } }.
+export function rollupHistoryRecords(summary = {}, records = []) {
+  const next = { ...summary };
+  for (const record of records) {
+    if (!record) continue;
+    const isCompleted = record.status === FOCUS_STATES.FOCUS_COMPLETED;
+    if (!isCompleted && record.status !== FOCUS_STATES.ABANDONED) continue;
+
+    const dateStr = recordDateStr(record);
+    const day = next[dateStr] ?? {
+      completedSessions: 0,
+      focusMinutes: 0,
+      abandonedSessions: 0,
+    };
+    next[dateStr] = isCompleted
+      ? {
+          ...day,
+          completedSessions: day.completedSessions + 1,
+          focusMinutes: day.focusMinutes + recordFocusMinutes(record),
+        }
+      : { ...day, abandonedSessions: day.abandonedSessions + 1 };
+  }
+  return next;
+}
+
 export function aggregateDailyProgress(
   historyRecords = [],
   targetDateStr = null,
@@ -442,9 +506,7 @@ export function aggregateDailyProgress(
   for (const record of daysRecords) {
     if (record.status === FOCUS_STATES.FOCUS_COMPLETED) {
       completedSessions += 1;
-      focusMinutes +=
-        record.focusDurationMinutes ||
-        Math.round((record.actualFocusSeconds || 0) / 60);
+      focusMinutes += recordFocusMinutes(record);
     } else if (record.status === FOCUS_STATES.ABANDONED) {
       abandonedSessions += 1;
     }

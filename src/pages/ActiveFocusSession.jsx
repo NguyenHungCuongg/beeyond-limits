@@ -10,6 +10,7 @@ import {
 import { FOCUS_PHASES, FOCUS_STATES } from "../core/focusSession.js";
 import { getFocusEnvironmentIndicators } from "../core/focusEnvironmentStatus.js";
 import ConfirmDialog from "../components/ConfirmDialog";
+import { ABANDON_REASONS } from "../core/focusStats.js";
 
 function getRemainingSeconds(session, now = Date.now()) {
   if (!session) return 0;
@@ -39,6 +40,7 @@ function ActiveFocusSession({ onNavigate, onStartFocus, focusSession }) {
   const session = focusSession.activeSession;
   const [now, setNow] = useState(Date.now());
   const [showConfirm, setShowConfirm] = useState(false);
+  const [stopReason, setStopReason] = useState(null);
   const stopBtnRef = useRef(null);
 
   useEffect(() => {
@@ -101,7 +103,7 @@ function ActiveFocusSession({ onNavigate, onStartFocus, focusSession }) {
 
   async function handleStopEarly() {
     try {
-      await focusSession.abandonSession(session.id);
+      await focusSession.abandonSession(session.id, stopReason ?? "user_stopped");
       onNavigate("home");
     } catch {
       setShowConfirm(false); // keep on recoverable state
@@ -200,7 +202,10 @@ function ActiveFocusSession({ onNavigate, onStartFocus, focusSession }) {
           <button
             ref={stopBtnRef}
             type="button"
-            onClick={() => setShowConfirm(true)}
+            onClick={() => {
+              setStopReason(null);
+              setShowConfirm(true);
+            }}
             disabled={focusSession.isBusy}
             className="w-full bg-paper text-crimson brutal-border-light font-mono font-bold uppercase py-3 flex items-center justify-center gap-2 disabled:opacity-50 hover:bg-crimson hover:text-paper transition-colors"
           >
@@ -227,7 +232,31 @@ function ActiveFocusSession({ onNavigate, onStartFocus, focusSession }) {
           onConfirm={handleStopEarly}
           onCancel={() => setShowConfirm(false)}
           focusTriggerRef={stopBtnRef}
-        />
+        >
+          <fieldset className="mb-6">
+            <legend className="font-mono text-xs font-bold uppercase mb-2">
+              Why are you stopping? (optional)
+            </legend>
+            <div className="flex flex-wrap gap-2">
+              {ABANDON_REASONS.map((reason) => {
+                const selected = stopReason === reason.id;
+                return (
+                  <button
+                    key={reason.id}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => setStopReason(selected ? null : reason.id)}
+                    className={`brutal-border font-mono text-xs font-bold uppercase px-2 py-1 transition-colors ${
+                      selected ? "bg-ink text-paper" : "bg-paper text-ink hover:bg-canvas"
+                    }`}
+                  >
+                    {reason.label}
+                  </button>
+                );
+              })}
+            </div>
+          </fieldset>
+        </ConfirmDialog>
       )}
     </div>
   );

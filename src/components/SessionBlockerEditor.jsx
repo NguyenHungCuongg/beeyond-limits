@@ -1,7 +1,12 @@
 import { useState } from "react";
 import toast from "react-hot-toast";
 import BlockedURL from "./BlockedURL";
-import { normalizeDomain, sanitizeBlockedUrls } from "../core/blocking";
+import BlockSuggestions from "./BlockSuggestions";
+import {
+  addDomainsToBlocklist,
+  normalizeDomain,
+  sanitizeBlockedUrls,
+} from "../core/blocking";
 import { ChevronLeft, ShieldCheck, Globe } from "./Icons";
 
 function SessionBlockerEditor({ blockedUrls, onUpdate, onClose }) {
@@ -89,6 +94,14 @@ function SessionBlockerEditor({ blockedUrls, onUpdate, onClose }) {
           Block
         </button>
       </form>
+
+      <BlockSuggestions
+        blockedUrls={blockedUrls}
+        onAdd={(domains) => {
+          const next = addDomainsToBlocklist(blockedUrls, domains);
+          if (next !== blockedUrls) onUpdate(next);
+        }}
+      />
 
       <div className="mb-6 space-y-3 pb-20">
         {blockedUrls.length > 0 ? (

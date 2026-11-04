@@ -8,6 +8,7 @@ export default function ConfirmDialog({
   onConfirm,
   onCancel,
   focusTriggerRef,
+  children,
 }) {
   const dialogRef = useRef(null);
   const cancelBtnRef = useRef(null);
@@ -22,18 +23,17 @@ export default function ConfirmDialog({
         onCancel();
       }
 
-      // Basic focus trap
+      // Basic focus trap across every button in the dialog
       if (e.key === "Tab") {
-        if (e.shiftKey) {
-          if (document.activeElement === cancelBtnRef.current) {
-            e.preventDefault();
-            confirmBtnRef.current?.focus();
-          }
-        } else {
-          if (document.activeElement === confirmBtnRef.current) {
-            e.preventDefault();
-            cancelBtnRef.current?.focus();
-          }
+        const buttons = dialogRef.current?.querySelectorAll("button") ?? [];
+        const first = buttons[0];
+        const last = buttons[buttons.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last?.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first?.focus();
         }
       }
     };
@@ -72,6 +72,7 @@ export default function ConfirmDialog({
         >
           {message}
         </p>
+        {children}
         <div className="flex gap-3">
           <button
             ref={cancelBtnRef}

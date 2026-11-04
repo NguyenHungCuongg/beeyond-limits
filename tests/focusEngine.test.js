@@ -208,9 +208,11 @@ serialTest(
     const bg = await import(`../src/background.js?test_startup1=${Date.now()}`);
     await bg.focusManager.ready;
 
-    assert.equal(mock.alarmsCreated.length, 1);
-    assert.equal(mock.alarmsCreated[0].name, "focusSessionTimer");
-    assert.equal(mock.alarmsCreated[0].alarmInfo.when, futureTime);
+    const focusAlarms = mock.alarmsCreated.filter(
+      (alarm) => alarm.name === "focusSessionTimer",
+    );
+    assert.equal(focusAlarms.length, 1);
+    assert.equal(focusAlarms[0].alarmInfo.when, futureTime);
 
     delete globalThis.chrome;
   },
@@ -723,3 +725,211 @@ serialTest(
     delete globalThis.chrome;
   },
 );
+
+const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
+
+function sendToBackground(mock, message) {
+  return new Promise((resolve) => mock.messageListeners[0](message, {}, resolve));
+}
+
+function runningSession(overrides = {}) {
+  return {
+    id: "session_running",
+    schemaVersion: 1,
+    phase: "focus",
+    status: "active_focus",
+    startedAt: Date.now(),
+    phaseStartedAt: Date.now(),
+    phaseEndsAt: Date.now() + 600000,
+    durationSeconds: 600,
+    remainingSeconds: 600,
+    snapshot: {
+      focusDuration: 10,
+      breakDuration: 2,
+      blocker: { enabled: true, blockedUrls: [{ id: "reddit.com", url: "reddit.com" }] },
+    },
+    ...overrides,
+  };
+}
+
+const blockedDomains = (mock) =>
+  mock.dynamicRules.flatMap((rule) => rule.condition.requestDomains);
+
+serialTest("Pomodoro phase completion plays a one-shot chime, not the looping alarm", async () => {
+  const mock = createMockChrome({
+    pomodoroState: {
+      isActive: true,
+      isBreak: false,
+      currentTime: 0,
+      initialTime: 1500,
+      phaseEndsAt: Date.now() - 1000,
+      sessionCount: 0,
+    },
+  });
+  globalThis.chrome = mock.chromeMock;
+  await import(`../src/background.js?test_pomodoro_chime=${Date.now()}`);
+  await settle();
+
+  const alarmMessages = mock.broadcastMessages
+    .filter((m) => m.target === "offscreen" && m.type.endsWith("_ALARM"))
+    .map((m) => m.type);
+  assert.deepEqual(alarmMessages, ["TEST_ALARM"]);
+
+  delete globalThis.chrome;
+});
+
+serialTest("Website Blocker edits during a Focus Session apply only after it ends", async () => {
+  const mock = createMockChrome({ activeFocusSession: runningSession() });
+  globalThis.chrome = mock.chromeMock;
+  const bg = await import(`../src/background.js?test_blocker_owner=${Date.now()}`);
+  await settle();
+  assert.deepEqual(blockedDomains(mock), ["reddit.com"]);
+
+  const response = await sendToBackground(mock, {
+    type: "UPDATE_BLOCKING_RULES",
+    isBlocking: true,
+    blockedUrls: [{ id: 1, url: "youtube.com" }],
+  });
+  assert.equal(response.success, true);
+  assert.equal(mock.storageState.blockedUrls[0].url, "youtube.com");
+  assert.deepEqual(blockedDomains(mock), ["reddit.com"]);
+
+  await bg.focusManager.abandonSession();
+  assert.deepEqual(blockedDomains(mock), ["youtube.com"]);
+
+  delete globalThis.chrome;
+});
+
+serialTest("Starting a Focus Session while one is running is refused", async () => {
+  const mock = createMockChrome({ activeFocusSession: runningSession() });
+  globalThis.chrome = mock.chromeMock;
+  const bg = await import(`../src/background.js?test_single_session=${Date.now()}`);
+
+  const response = await bg.focusManager.startSession({ config: { focusDuration: 25 } });
+
+  assert.equal(response.success, false);
+  assert.equal(mock.storageState.activeFocusSession.id, "session_running");
+
+  delete globalThis.chrome;
+});
+
+serialTest("Browser restart during a break keeps sites unblocked, like a live break", async () => {
+  const mock = createMockChrome({
+    activeFocusSession: runningSession({ phase: "break", status: "active_break" }),
+    isBlocking: true,
+    blockedUrls: [{ id: 1, url: "youtube.com" }],
+  });
+  globalThis.chrome = mock.chromeMock;
+  await import(`../src/background.js?test_break_startup=${Date.now()}`);
+  await settle();
+
+  assert.deepEqual(blockedDomains(mock), []);
+
+  delete globalThis.chrome;
+});
+
+serialTest(
+  "Focus alarm falls back to a notification when the popup cannot open",
+  async () => {
+    const session = {
+      id: "session_popup_fail",
+      schemaVersion: 1,
+      phase: "focus",
+      status: "active_focus",
+      startedAt: Date.now() - 1500000,
+      phaseStartedAt: Date.now() - 1500000,
+      phaseEndsAt: Date.now() + 600000,
+      durationSeconds: 1500,
+      remainingSeconds: 600,
+      snapshot: { focusDuration: 25, breakDuration: 5 },
+    };
+    const mock = createMockChrome({ activeFocusSession: session });
+    mock.chromeMock.action.openPopup = async () => {
+      throw new Error("No active browser window");
+    };
+    globalThis.chrome = mock.chromeMock;
+
+    const bg = await import(`../src/background.js?test_popup_fail=${Date.now()}`);
+    await bg.focusManager.ready;
+    await bg.focusManager.completeCurrentPhase();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    assert.equal(mock.notificationsCreated.length, 1);
+    assert.equal(mock.notificationsCreated[0].buttons[0].title, "Mute alarm");
+
+    const notificationId = bg.FOCUS_NOTIFICATION_ID;
+    mock.notificationButtonListeners.forEach((listener) =>
+      listener(notificationId, 0),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    assert.equal(mock.storageState.focusPendingAlarm, undefined);
+    assert.ok(mock.notificationsCleared.includes(notificationId));
+
+    delete globalThis.chrome;
+  },
+);
+
+serialTest(
+  "togglePause pauses a running session and resumes a paused one",
+  async () => {
+    const mock = createMockChrome();
+    globalThis.chrome = mock.chromeMock;
+    const bg = await import(`../src/background.js?test_toggle=${Date.now()}`);
+    await bg.focusManager.ready;
+
+    await bg.focusManager.startSession({
+      config: { focusDuration: 25, blocker: { enabled: false } },
+    });
+
+    const paused = await bg.focusManager.togglePause();
+    assert.equal(paused.activeSession.status, "paused_focus");
+    const resumed = await bg.focusManager.togglePause();
+    assert.equal(resumed.activeSession.status, "active_focus");
+
+    delete globalThis.chrome;
+  },
+);
+
+serialTest("togglePause does nothing without a running session", async () => {
+  const mock = createMockChrome();
+  globalThis.chrome = mock.chromeMock;
+  const bg = await import(`../src/background.js?test_toggle_idle=${Date.now()}`);
+  await bg.focusManager.ready;
+
+  const result = await bg.focusManager.togglePause();
+  assert.equal(result.success, false);
+
+  delete globalThis.chrome;
+});
+
+serialTest("badge shows minutes left after a session starts", async () => {
+  const mock = createMockChrome();
+  globalThis.chrome = mock.chromeMock;
+  const bg = await import(`../src/background.js?test_badge=${Date.now()}`);
+  await bg.focusManager.ready;
+
+  await bg.focusManager.startSession({
+    config: { focusDuration: 25, blocker: { enabled: false } },
+  });
+  await bg.focusManager.refreshBadge();
+
+  assert.equal(mock.badgeTexts.at(-1), "25m");
+  assert.ok(mock.alarmsCreated.some((alarm) => alarm.name === "focusBadgeTick"));
+
+  delete globalThis.chrome;
+});
+
+serialTest("getState returns the rolled-up daily summary", async () => {
+  const dailySummary = {
+    "2026-01-01": { completedSessions: 2, focusMinutes: 50, abandonedSessions: 0 },
+  };
+  const mock = createMockChrome({ focusSessionDailySummary: dailySummary });
+  globalThis.chrome = mock.chromeMock;
+  const bg = await import(`../src/background.js?test_summary=${Date.now()}`);
+
+  const state = await bg.focusManager.getState();
+  assert.deepEqual(state.dailySummary, dailySummary);
+
+  delete globalThis.chrome;
+});

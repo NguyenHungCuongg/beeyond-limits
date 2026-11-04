@@ -22,6 +22,7 @@ import {
   startNextFocusCycle,
   calculateRemainingSeconds,
   calculateProgressPercentage,
+  getFocusBadge,
   FOCUS_STATES,
   FOCUS_PHASES,
   AMBIENT_SOUND_IDS,
@@ -32,17 +33,22 @@ import {
   clearActiveFocusSession,
   getFocusTemplates,
   getFocusHistory,
+  getFocusDailySummary,
   appendFocusHistory,
   getFocusPreferences,
   updateFocusPreferences,
   saveFocusTemplate,
   deleteFocusTemplate,
   initializeFocusStorage,
+  STORAGE_KEYS,
 } from "./core/focusStorage.js";
 
 const POMODORO_ALARM = "pomodoroTimer";
 export const FOCUS_ALARM = "focusSessionTimer";
 const FOCUS_PENDING_ALARM_KEY = "focusPendingAlarm";
+const FOCUS_BADGE_ALARM = "focusBadgeTick";
+export const FOCUS_NOTIFICATION_ID = "focusPhaseAlarm";
+const TOGGLE_PAUSE_COMMAND = "toggle-focus-pause";
 
 const DEFAULT_AMBIENT_SETTINGS = Object.freeze({
   bird: { enabled: false, volume: 50 },
@@ -347,8 +353,9 @@ class BackgroundPomodoroManager {
     }
 
     const audioUrl = this.chromeApi.runtime.getURL(`audio/${getAlarmAudioUrl()}`);
+    // One-shot chime: Pomodoro auto-advances and has no mute UI, so a looping START_ALARM would ring forever.
     return this.offscreenBridge.send({
-      type: "START_ALARM",
+      type: "TEST_ALARM",
       audioUrl,
     });
   }
@@ -438,6 +445,7 @@ export class FocusSessionManager {
     this.ambientManager = ambientManager;
     this.offscreenBridge = offscreenBridge;
     this.completionPromise = null;
+    this.badgeQueue = createOperationQueue();
     this.ready = this.loadState();
   }
 
@@ -496,15 +504,17 @@ export class FocusSessionManager {
   }
 
   async restoreEnvironment(session) {
+    // Stored quick tool config is the truth: it includes edits saved while the session owned blocking.
+    if (this.chromeApi.declarativeNetRequest?.getDynamicRules) {
+      await blockerOperationQueue.run(() =>
+        syncBlockingRulesFromStorage(this.chromeApi),
+      );
+    }
+
     const previous = session?.preSessionState;
     if (!previous) {
       return;
     }
-
-    await this.applySessionBlocker(
-      previous.blocker?.isBlocking,
-      previous.blocker?.blockedUrls ?? [],
-    );
 
     if (
       previous.ambientSettings &&
@@ -520,17 +530,11 @@ export class FocusSessionManager {
 
   async captureEnvironmentState() {
     const data = await this.chromeApi.storage.local.get([
-      "isBlocking",
-      "blockedUrls",
       "ambientSettings",
       "pomodoroState",
     ]);
 
     return {
-      blocker: {
-        isBlocking: Boolean(data.isBlocking),
-        blockedUrls: Array.isArray(data.blockedUrls) ? data.blockedUrls : [],
-      },
       ambientSettings:
         data.ambientSettings && typeof data.ambientSettings === "object"
           ? data.ambientSettings
@@ -567,12 +571,13 @@ export class FocusSessionManager {
 
   async getState() {
     await this.ready;
-    const [rawActive, templates, history, preferences, pendingResult] = await Promise.all([
+    const [rawActive, templates, history, preferences, pendingResult, dailySummary] = await Promise.all([
       getActiveFocusSession(this.chromeApi),
       getFocusTemplates(this.chromeApi),
       getFocusHistory(this.chromeApi),
       getFocusPreferences(this.chromeApi),
       this.chromeApi.storage.local.get([FOCUS_PENDING_ALARM_KEY]),
+      getFocusDailySummary(this.chromeApi),
     ]);
 
     let activeSession = rawActive;
@@ -590,6 +595,7 @@ export class FocusSessionManager {
       activeSession,
       templates,
       history,
+      dailySummary,
       preferences,
       pendingAlarm: pendingResult[FOCUS_PENDING_ALARM_KEY] ?? null,
     };
@@ -597,6 +603,9 @@ export class FocusSessionManager {
 
   async startSession(payload = {}) {
     await this.ready;
+    if (await getActiveFocusSession(this.chromeApi)) {
+      return { success: false, error: "A Focus Session is already running" };
+    }
     const inputConfig = payload.config || payload || {};
     const config = {
       templateId: inputConfig.templateId,
@@ -853,6 +862,21 @@ export class FocusSessionManager {
     return { success: true, activeSession: null };
   }
 
+  async togglePause() {
+    await this.ready;
+    const session = await getActiveFocusSession(this.chromeApi);
+    switch (session?.status) {
+      case FOCUS_STATES.ACTIVE_FOCUS:
+      case FOCUS_STATES.ACTIVE_BREAK:
+        return this.pauseSession({ runtimeId: session.id });
+      case FOCUS_STATES.PAUSED_FOCUS:
+      case FOCUS_STATES.PAUSED_BREAK:
+        return this.resumeSession({ runtimeId: session.id });
+      default:
+        return { success: false, error: "No running Focus Session to pause" };
+    }
+  }
+
   async updatePreferences(payload = {}) {
     await this.ready;
     const prefsToUpdate = payload.preferences || payload;
@@ -909,7 +933,7 @@ export class FocusSessionManager {
       await this.setPendingAlarm(completedSession, "break");
     }
 
-    this.openAlarmSurface();
+    this.openAlarmSurface(completedSession);
     this.broadcastStateUpdate(completedSession);
 
     const audioUrl = this.chromeApi.runtime.getURL(`audio/${getAlarmAudioUrl()}`);
@@ -940,19 +964,74 @@ export class FocusSessionManager {
         createdAt: Date.now(),
       },
     });
-    await this.chromeApi.action?.setBadgeText?.({ text: "!" });
+    await this.refreshBadge();
   }
 
   async clearPendingAlarm() {
     await this.chromeApi.storage.local.remove(FOCUS_PENDING_ALARM_KEY);
-    await this.chromeApi.action?.setBadgeText?.({ text: "" });
+    await this.chromeApi.notifications
+      ?.clear?.(FOCUS_NOTIFICATION_ID)
+      ?.catch?.(() => {});
+    await this.refreshBadge();
   }
 
-  openAlarmSurface() {
+  refreshBadge() {
+    return this.badgeQueue.run(async () => {
+      const action = this.chromeApi.action;
+      if (!action?.setBadgeText) return;
+      const data = await this.chromeApi.storage.local.get([
+        STORAGE_KEYS.ACTIVE_SESSION,
+        FOCUS_PENDING_ALARM_KEY,
+      ]);
+      const session = data[STORAGE_KEYS.ACTIVE_SESSION] ?? null;
+      const hasPendingAlarm = Boolean(data[FOCUS_PENDING_ALARM_KEY]);
+      const badge = getFocusBadge(session, hasPendingAlarm);
+
+      await action.setBadgeText({ text: badge.text });
+      if (badge.color) {
+        await action.setBadgeBackgroundColor?.({ color: badge.color });
+        await action.setBadgeTextColor?.({ color: badge.textColor });
+      }
+
+      const isRunning =
+        session?.status === FOCUS_STATES.ACTIVE_FOCUS ||
+        session?.status === FOCUS_STATES.ACTIVE_BREAK;
+      // ponytail: 30s tick (Chrome's minimum alarm period), so the badge can lag the real countdown by up to 30s.
+      if (isRunning && !hasPendingAlarm) {
+        await this.chromeApi.alarms.create(FOCUS_BADGE_ALARM, {
+          periodInMinutes: 0.5,
+        });
+      } else {
+        await this.chromeApi.alarms.clear(FOCUS_BADGE_ALARM);
+      }
+    });
+  }
+
+  openAlarmSurface(session) {
     if (!this.chromeApi.action?.openPopup) return;
     this.chromeApi.action.openPopup().catch((error) => {
+      // openPopup() needs a focused Chrome window; otherwise fall back to a system notification.
       console.warn("Unable to open Focus alarm popup:", error);
+      this.showAlarmNotification(session);
     });
+  }
+
+  showAlarmNotification(session) {
+    const isFocus = session?.phase === FOCUS_PHASES.FOCUS;
+    this.chromeApi.notifications
+      ?.create(FOCUS_NOTIFICATION_ID, {
+        type: "basic",
+        iconUrl: "images/icon128.png",
+        title: isFocus ? "Focus complete!" : "Break is over",
+        message: isFocus
+          ? `${session.snapshot?.focusDuration || 25} minutes done. Open Beeyond Limits to start your break.`
+          : "Open Beeyond Limits to start your next focus cycle.",
+        buttons: [{ title: "Mute alarm" }],
+        requireInteraction: true,
+      })
+      .catch((error) => {
+        console.error("Unable to show Focus alarm notification:", error);
+      });
   }
 
   async saveTemplate(inputTemplate) {
@@ -1001,6 +1080,9 @@ export class FocusSessionManager {
   }
 
   broadcastStateUpdate(activeSession) {
+    this.refreshBadge().catch((error) => {
+      console.error("Unable to update badge:", error);
+    });
     if (!this.chromeApi.runtime?.sendMessage) return;
     const now = Date.now();
     const sessionPayload = activeSession
@@ -1052,6 +1134,8 @@ chromeApi.alarms.onAlarm.addListener((alarm) => {
       .catch((error) => {
         console.error("Unable to complete Pomodoro phase:", error);
       });
+  } else if (alarm.name === FOCUS_BADGE_ALARM) {
+    focusManager.refreshBadge().catch(() => {});
   } else if (alarm.name === FOCUS_ALARM) {
     focusOperationQueue
       .run(() => focusManager.completeCurrentPhase())
@@ -1059,6 +1143,25 @@ chromeApi.alarms.onAlarm.addListener((alarm) => {
         console.error("Unable to complete Focus phase:", error);
       });
   }
+});
+
+chromeApi.notifications?.onButtonClicked?.addListener((notificationId) => {
+  if (notificationId !== FOCUS_NOTIFICATION_ID) return;
+  focusOperationQueue.run(() => focusManager.stopAlarm()).catch((error) => {
+    console.error("Unable to mute Focus alarm:", error);
+  });
+});
+
+chromeApi.notifications?.onClicked?.addListener((notificationId) => {
+  if (notificationId !== FOCUS_NOTIFICATION_ID) return;
+  chromeApi.action?.openPopup?.().catch(() => {});
+});
+
+chromeApi.commands?.onCommand?.addListener((command) => {
+  if (command !== TOGGLE_PAUSE_COMMAND) return;
+  focusOperationQueue.run(() => focusManager.togglePause()).catch((error) => {
+    console.error("Unable to toggle Focus Session pause:", error);
+  });
 });
 
 chromeApi.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -1070,11 +1173,13 @@ chromeApi.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     case "UPDATE_BLOCKING_RULES":
       return respond(
         sendResponse,
-        blockerOperationQueue.run(() =>
+        blockerOperationQueue.run(async () =>
           updateBlockingConfiguration(
             chromeApi,
             message.isBlocking,
             message.blockedUrls,
+            // ADR-001: a running session owns the rules; just save the quick tool config for after it ends.
+            { applyRules: !(await getActiveFocusSession(chromeApi)) },
           ),
         ),
       );
@@ -1232,14 +1337,11 @@ async function synchronizeStartup() {
     if (chromeApi.declarativeNetRequest?.getDynamicRules) {
       const state = await focusManager.getState();
       const session = state.activeSession;
-      if (
-        session &&
-        (session.status === "active_focus" ||
-          session.status === "paused_focus" ||
-          session.status === "focus_completed")
-      ) {
+      if (session) {
+        // Breaks run unblocked, same as startBreak().
         await focusManager.applySessionBlocker(
-          Boolean(session.snapshot?.blocker?.enabled),
+          session.phase === FOCUS_PHASES.FOCUS &&
+            Boolean(session.snapshot?.blocker?.enabled),
           session.snapshot?.blocker?.blockedUrls ?? [],
         );
       } else {
@@ -1248,6 +1350,7 @@ async function synchronizeStartup() {
         );
       }
     }
+    await focusManager.refreshBadge();
   } catch (error) {
     console.error("Unable to synchronize startup:", error);
   }

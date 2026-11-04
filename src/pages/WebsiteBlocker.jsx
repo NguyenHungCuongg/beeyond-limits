@@ -2,7 +2,12 @@ import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import BlockedURL from "../components/BlockedURL";
 import BlockerStats from "../components/BlockerStats";
-import { normalizeDomain, sanitizeBlockedUrls } from "../core/blocking";
+import BlockSuggestions from "../components/BlockSuggestions";
+import {
+  addDomainsToBlocklist,
+  normalizeDomain,
+  sanitizeBlockedUrls,
+} from "../core/blocking";
 import { ChevronLeft, ShieldCheck, Globe, Loader, Home } from "../components/Icons";
 
 /* global chrome */
@@ -218,6 +223,17 @@ function WebsiteBlocker({ onNavigate, focusSession }) {
           Block
         </button>
       </form>
+
+      {!isLoading && (
+        <BlockSuggestions
+          blockedUrls={blockedUrls}
+          disabled={isSaving}
+          onAdd={(domains) => {
+            const next = addDomainsToBlocklist(blockedUrls, domains);
+            if (next !== blockedUrls) persistConfiguration(isBlocking, next);
+          }}
+        />
+      )}
 
       <div className="mb-6 space-y-3">
         {isLoading ? (

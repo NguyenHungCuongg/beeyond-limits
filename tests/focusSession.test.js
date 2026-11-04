@@ -13,6 +13,7 @@ import {
   pauseFocusSession,
   resumeFocusSession,
   calculateRemainingSeconds,
+  getFocusBadge,
   calculateProgressPercentage,
   isSessionExpired,
   completeFocusSession,
@@ -22,6 +23,7 @@ import {
   aggregateDailyProgress,
   calculateStreakDays,
   pruneHistoryRecords,
+  rollupHistoryRecords,
   isDuplicateCompletion,
 } from "../src/core/focusSession.js";
 
@@ -673,4 +675,62 @@ test("Iteration 2: isDuplicateCompletion checks both r.runtimeId and r.id", () =
   assert.equal(isDuplicateCompletion(history, "session_by_id"), true);
   assert.equal(isDuplicateCompletion(history, "session_by_runtime_id"), true);
   assert.equal(isDuplicateCompletion(history, "session_unknown"), false);
+});
+
+test("getFocusBadge shows minutes left while focusing", () => {
+  const now = 1_000_000;
+  const session = createFocusSession({ focusDuration: 25 }, now);
+  assert.deepEqual(getFocusBadge(session, false, now + 61_000), {
+    text: "24m",
+    color: "#eeba0b",
+    textColor: "#0d0c0c",
+  });
+});
+
+test("getFocusBadge uses the break color during a break", () => {
+  const now = 1_000_000;
+  const session = startBreakSession(
+    completeFocusSession(createFocusSession({ breakDuration: 5 }, now), now),
+    5,
+    now,
+  );
+  assert.equal(getFocusBadge(session, false, now).text, "5m");
+  assert.equal(getFocusBadge(session, false, now).color, "#1e3a8a");
+});
+
+test("getFocusBadge marks paused sessions and pending alarms", () => {
+  const now = 1_000_000;
+  const paused = pauseFocusSession(createFocusSession({}, now), now);
+  assert.equal(getFocusBadge(paused, false, now).text, "❚❚");
+  assert.equal(getFocusBadge(paused, true, now).text, "!");
+});
+
+test("getFocusBadge is empty without a running session", () => {
+  assert.equal(getFocusBadge(null).text, "");
+  const completed = completeFocusSession(createFocusSession({}, 0), 0);
+  assert.equal(getFocusBadge(completed).text, "");
+});
+
+test("rollupHistoryRecords adds dropped records to per-day totals", () => {
+  const summary = rollupHistoryRecords(
+    { "2026-01-01": { completedSessions: 1, focusMinutes: 25, abandonedSessions: 0 } },
+    [
+      { status: FOCUS_STATES.FOCUS_COMPLETED, dateStr: "2026-01-01", focusDurationMinutes: 50 },
+      { status: FOCUS_STATES.ABANDONED, dateStr: "2026-01-01", actualFocusSeconds: 600 },
+      { status: FOCUS_STATES.FOCUS_COMPLETED, completedAt: new Date(2026, 0, 2, 9).getTime(), actualFocusSeconds: 1500 },
+    ],
+  );
+
+  assert.deepEqual(summary, {
+    "2026-01-01": { completedSessions: 2, focusMinutes: 75, abandonedSessions: 1 },
+    "2026-01-02": { completedSessions: 1, focusMinutes: 25, abandonedSessions: 0 },
+  });
+});
+
+test("rollupHistoryRecords does not mutate the previous summary", () => {
+  const previous = { "2026-01-01": { completedSessions: 1, focusMinutes: 25, abandonedSessions: 0 } };
+  rollupHistoryRecords(previous, [
+    { status: FOCUS_STATES.FOCUS_COMPLETED, dateStr: "2026-01-01", focusDurationMinutes: 25 },
+  ]);
+  assert.equal(previous["2026-01-01"].completedSessions, 1);
 });

@@ -19,7 +19,7 @@ This information is stored locally in `chrome.storage.local` so that extension s
 
 Beeyond Limits uses Chrome's `declarativeNetRequest` API to redirect top-level navigation to domains that the user explicitly chose to block. The extension does not inject scripts into websites, read page content, inspect HTTP request or response bodies, or collect a general browsing history.
 
-The `<all_urls>` host permission allows the user-facing blocker to work with any HTTP or HTTPS domain selected by the user. It is not used for advertising, analytics, page-content collection, or tracking.
+The `<all_urls>` host permission allows the user-facing blocker to work with any HTTP or HTTPS domain selected by the user. While a blocklist editor is open, the extension also reads the active tab's address to offer a "Block this tab" shortcut; that domain is saved only if the user clicks it. It is not used for advertising, analytics, page-content collection, or tracking.
 
 ## Data transmission and sharing
 

@@ -15,6 +15,11 @@ test("manifest declares APIs used by the service worker", () => {
   assert.equal(manifest.background.type, "module");
 });
 
+test("manifest declares keyboard shortcuts handled by the service worker", () => {
+  assert.ok(manifest.commands._execute_action.suggested_key.default);
+  assert.ok(manifest.commands["toggle-focus-pause"].suggested_key.default);
+});
+
 test("manifest exposes only the redirect page to websites", () => {
   assert.deepEqual(manifest.web_accessible_resources, [
     {
