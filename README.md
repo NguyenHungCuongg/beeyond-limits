@@ -117,6 +117,7 @@ Each work cycle is tracked independently, so a long session can show meaningful 
 | ![Home](docs/store-assets/Home.png)               | ![Focus Session](docs/store-assets/Session.png) |
 | ![Pomodoro](docs/store-assets/Pomodoro.png)       | ![Ambient Sounds](docs/store-assets/Sounds.png) |
 | ![Website Blocker](docs/store-assets/Blocker.png) | ![Todo List](docs/store-assets/Tasks.png)       |
+| ![Stats](docs/store-assets/Stats.png)             |                                                 |
 
 ## ⚡ Quick start
 

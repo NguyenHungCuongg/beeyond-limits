@@ -59,5 +59,9 @@ The extension handles user-created tasks, goals, session state/history, preferen
 5. Configure a Focus Session with a timer, optional task, ambient sound, and blocked domain.
 6. Start the session, close and reopen the popup, and confirm state recovery.
 7. Test ambient audio and the timer-completion alarm, including mute/stop controls.
+8. While a Focus Session is running, open a blocked domain: the blocked page shows the domain, the session goal, and the minutes left. The toolbar badge shows the minutes left.
+9. Press Alt+Shift+P to pause and resume the Focus Session.
+10. In a blocklist editor, click "+ Block this tab" or a preset such as "+ Social" to add domains.
+11. On Home, click the "Today / Min" counter to open Stats (7/30-day chart, completion rate, daily goal).
 
 No account, credentials, payment, or external service is required for review.
